@@ -1,0 +1,266 @@
+﻿using System;
+using System.IO;
+using System.Linq;
+using System.Reflection;
+using BepInEx.Configuration;
+using BootlegBestiary.Shared;
+using UnityEngine;
+
+namespace BootlegBestiary
+{
+    public static class PluginConfig
+    {
+        public enum FormatType
+        {
+            None = 0,
+            Percentage = 1,
+            Time = 2,
+            Distance = 3,
+            Speed = 4,
+            Multiplier = 5
+        }
+        public static void Init(ConfigFile cfg)
+        {
+            if (BootlegBestiary.RooInstalled)
+                InitRoO();
+            Assembly assembly = Assembly.GetExecutingAssembly();
+            Type[] types = assembly.GetTypes().Where(type => type.IsClass && !type.IsAbstract && type.IsSubclassOf(typeof(SetupModule))).ToArray();
+            foreach (Type type in types)
+            {
+                BootlegBestiary.ModuleInfoAttribute moduleInfo = type.GetCustomAttribute<BootlegBestiary.ModuleInfoAttribute>();
+                if (moduleInfo != null)
+                {
+                    ConfigEntry<bool> configEntry = cfg.BindOption(
+                        $"{moduleInfo.Section}",
+                        $"{moduleInfo.ModuleName}",
+                        true,
+                        $"{moduleInfo.Description}",
+                        moduleInfo.RequiresRestart);
+                    BootlegBestiary.Instance.mainModuleConfigEntries.Add(type, configEntry);
+                }
+                else
+                {
+                    Log.Error($"ModuleInfo for {type.FullName} does not exist! No PluginConfig entry has been created.");
+                }
+            }
+        }
+        public static void InitRoO()
+        {
+            try
+            {
+                RiskOfOptions.ModSettingsManager.SetModDescription("BootlegBestiary", BootlegBestiary.PluginGUID, BootlegBestiary.PluginName);
+
+                var iconStream = File.ReadAllBytes(Path.Combine(BootlegBestiary.Instance.DirectoryName, "icon.png"));
+                var tex = new Texture2D(256, 256);
+                tex.LoadImage(iconStream);
+                var icon = Sprite.Create(tex, new Rect(0, 0, 256, 256), new Vector2(0.5f, 0.5f));
+
+                RiskOfOptions.ModSettingsManager.SetModIcon(icon);
+            }
+            catch (Exception e)
+            {
+                Log.Debug(e.ToString());
+            }
+        }
+        public static ConfigEntry<T> BindOption<T>(this ConfigFile myConfig, string section, string name, T defaultValue, string description = "", bool restartRequired = false)
+        {
+            if (defaultValue is int or float && !typeof(T).IsEnum)
+            {
+#if DEBUG
+                Log.Warning($"Config entry {name} in section {section} is a numeric {typeof(T).Name} type, " +
+                    $"but has been registered without using {nameof(BindOptionSlider)}. " +
+                    $"Lower and upper bounds will be set to the defaults [0, 20]. Was this intentional?");
+#endif
+                return myConfig.BindOptionSlider(section, name, defaultValue, description, 0, 20, restartRequired);
+            }
+            if (string.IsNullOrEmpty(description))
+                description = name;
+
+            if (restartRequired)
+                description += " (restart required)";
+
+            AcceptableValueBase range = null;
+            if (typeof(T).IsEnum)
+                range = new AcceptableValueList<string>(Enum.GetNames(typeof(T)));
+
+            var configEntry = myConfig.Bind(section, name, defaultValue, new ConfigDescription(description, range));
+
+            if (BootlegBestiary.RooInstalled)
+                TryRegisterOption(configEntry, restartRequired);
+
+            return configEntry;
+        }
+        public static ConfigEntry<T> BindOptionSlider<T>(this ConfigFile myConfig, string section, string name, T defaultValue, string description = "", float min = 0, float max = 20, bool restartRequired = false)
+        {
+            if (!(defaultValue is int or float && !typeof(T).IsEnum))
+            {
+                Log.Warning($"Config entry {name} in section {section} is a not a numeric {typeof(T).Name} type, " +
+                    $"but has been registered as a slider option using {nameof(BindOptionSlider)}. Was this intentional?");
+                return myConfig.BindOption(section, name, defaultValue, description, restartRequired);
+            }
+
+            if (string.IsNullOrEmpty(description))
+                description = name;
+
+            description += " (Default: " + defaultValue + ")";
+
+            if (restartRequired)
+                description += " (restart required)";
+
+            AcceptableValueBase range = typeof(T) == typeof(int)
+                ? new AcceptableValueRange<int>((int)min, (int)max)
+                : new AcceptableValueRange<float>(min, max);
+
+            var configEntry = myConfig.Bind(section, name, defaultValue, new ConfigDescription(description, range));
+
+            if (BootlegBestiary.RooInstalled)
+                TryRegisterOptionSlider(configEntry, min, max, restartRequired);
+
+            return configEntry;
+        }
+        public static ConfigEntry<T> BindOptionSteppedSlider<T>(this ConfigFile myConfig, string section, string name, T defaultValue, float increment = 1f, string description = "", float min = 0, float max = 20, bool restartRequired = false, FormatType formatType = FormatType.None)
+        {
+            if (string.IsNullOrEmpty(description))
+                description = name;
+
+            description += " (Default: " + defaultValue + ")";
+
+            if (restartRequired)
+                description += " (restart required)";
+
+            var configEntry = myConfig.Bind(section, name, defaultValue, new ConfigDescription(description, new AcceptableValueRange<float>(min, max)));
+
+            if (BootlegBestiary.RooInstalled)
+                TryRegisterOptionSteppedSlider(configEntry, increment, min, max, restartRequired, formatType);
+
+            return configEntry;
+        }
+        public static void TryRegisterOption<T>(ConfigEntry<T> entry, bool restartRequired)
+        {
+            if (entry is ConfigEntry<string> stringEntry)
+            {
+                RiskOfOptions.ModSettingsManager.AddOption(new RiskOfOptions.Options.StringInputFieldOption(stringEntry, new RiskOfOptions.OptionConfigs.InputFieldConfig()
+                {
+                    submitOn = RiskOfOptions.OptionConfigs.InputFieldConfig.SubmitEnum.OnExitOrSubmit,
+                    restartRequired = restartRequired
+                }));
+            }
+            else if (entry is ConfigEntry<bool> boolEntry)
+            {
+                RiskOfOptions.ModSettingsManager.AddOption(new RiskOfOptions.Options.CheckBoxOption(boolEntry, restartRequired));
+            }
+            else if (entry is ConfigEntry<KeyboardShortcut> shortCutEntry)
+            {
+                RiskOfOptions.ModSettingsManager.AddOption(new RiskOfOptions.Options.KeyBindOption(shortCutEntry, restartRequired));
+            }
+            else if (typeof(T).IsEnum)
+            {
+                RiskOfOptions.ModSettingsManager.AddOption(new RiskOfOptions.Options.ChoiceOption(entry, restartRequired));
+            }
+            else
+            {
+                Log.Warning($"Config entry {entry.Definition.Key} in section {entry.Definition.Section} with type {typeof(T).Name} " +
+                    $"could not be registered in Risk Of Options using {nameof(TryRegisterOption)}.");
+            }
+        }
+        public static void TryRegisterOptionSlider<T>(ConfigEntry<T> entry, float min, float max, bool restartRequired)
+        {
+            if (entry is ConfigEntry<int> intEntry)
+            {
+                RiskOfOptions.ModSettingsManager.AddOption(new RiskOfOptions.Options.IntSliderOption(intEntry, new RiskOfOptions.OptionConfigs.IntSliderConfig()
+                {
+                    min = (int)min,
+                    max = (int)max,
+                    formatString = "{0:0}",
+                    restartRequired = restartRequired
+                }));
+            }
+            else if (entry is ConfigEntry<float> floatEntry)
+            {
+                RiskOfOptions.ModSettingsManager.AddOption(new RiskOfOptions.Options.SliderOption(floatEntry, new RiskOfOptions.OptionConfigs.SliderConfig()
+                {
+                    min = min,
+                    max = max,
+                    FormatString = "{0:0.000}",
+                    restartRequired = restartRequired
+                }));
+            }
+            else
+            {
+                Log.Warning($"Config entry {entry.Definition.Key} in section {entry.Definition.Section} with type {typeof(T).Name} " +
+                    $"could not be registered in Risk Of Options using {nameof(TryRegisterOptionSlider)}.");
+            }
+        }
+        public static void TryRegisterOptionSteppedSlider<T>(ConfigEntry<T> entry, float increment, float min, float max, bool restartRequired, FormatType formatType)
+        {
+            if (entry is ConfigEntry<float> floatEntry)
+            {
+                RiskOfOptions.ModSettingsManager.AddOption(new RiskOfOptions.Options.StepSliderOption(floatEntry, new RiskOfOptions.OptionConfigs.StepSliderConfig()
+                {
+                    increment = increment,
+                    min = min,
+                    max = max,
+                    FormatString = GetStepSizePrecision((decimal)increment, formatType),
+                    restartRequired = restartRequired
+                }));
+            }
+            else
+            {
+                Log.Warning($"Config entry {entry.Definition.Key} in section {entry.Definition.Section} with type {typeof(T).Name} " +
+                    $"could not be registered in Risk Of Options using {nameof(TryRegisterOptionSteppedSlider)}.");
+            }
+        }
+
+        //i (skeleton, not score) made this over a year ago
+        private static string GetStepSizePrecision(decimal n, FormatType formatType)
+        {
+            n = Math.Abs(n);
+            n -= (int)n;
+            int decimalPlaces = 0;
+            string stringFormat = "{0:";
+            while (n > 0)
+            {
+                decimalPlaces++;
+                n *= 10;
+                n -= (int)n;
+            }
+            if (decimalPlaces == 0)
+            {
+                return stringFormat + "0}" + AppendSuffix(formatType);
+            }
+            if (decimalPlaces > 0)
+            {
+                stringFormat += "0.";
+                for (int i = 0; i < decimalPlaces; i++)
+                {
+                    stringFormat += "0";
+                }
+                stringFormat += "}";
+                return stringFormat + AppendSuffix(formatType);
+            }
+            else
+            {
+                Log.Error($"Could not determine string format!");
+                return "{0:000}";
+            }
+        }
+        private static string AppendSuffix(FormatType formatType)
+        {
+            //type 1 = percentage
+            if (formatType == FormatType.Percentage)
+                return "%";
+            //type 2 = seconds
+            if (formatType == FormatType.Time)
+                return "s";
+            //type 3 = metres
+            if (formatType == FormatType.Distance)
+                return "m";
+            if (formatType == FormatType.Speed)
+                return "m/s";
+            if (formatType == FormatType.Multiplier)
+                return "x";
+            else
+                return "";
+        }
+    }
+}

@@ -1,0 +1,15 @@
+{
+    "name": "BootlegBestiary",
+    "description": "Adds 2 new fully custom enemies to the game!",
+    "version_number": "1.1.0",
+    "dependencies": [
+        "RiskofThunder-R2API_Director-2.3.9",
+        "RiskofThunder-R2API_Prefab-1.1.1",
+        "RiskofThunder-R2API_Sound-1.0.3",
+        "RiskofThunder-R2API_Language-1.1.0",
+        "RiskofThunder-R2API_RecalculateStats-1.6.6",
+        "RiskofThunder-R2API_DamageType-1.1.7"
+    ],
+    "optional_dependencies": [ "rune580-Risk_Of_Options-2.8.6" ],
+    "website_url": ""
+}
