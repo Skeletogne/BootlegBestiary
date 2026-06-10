@@ -1,5 +1,10 @@
 # CHANGELOG
 
+## 1.1.1
+- Removed some Debug log spam
+- Added github repository link
+- Bathylopods now actually spawn on Gilded Coast.
+
 ## 1.1.0
 
 - New Enemy - the Bathylopod!

@@ -47,8 +47,6 @@ namespace BootlegBestiary.Demineur
             GameObject demineurMasterPrefab = CustomAssets.DemineurMasterPrefab;
             CharacterSpawnCard cscDemineur = CustomAssets.DemineurSpawnCard;
 
-            EnemyPrefabValidator.ValidateAssets(demineurBodyPrefab, demineurMasterPrefab, cscDemineur);
-
             base.Initialise();
             PrefabAPI.RegisterNetworkPrefab(demineurBodyPrefab);
             PrefabAPI.RegisterNetworkPrefab(demineurMasterPrefab);
@@ -74,6 +72,7 @@ namespace BootlegBestiary.Demineur
             AddCardToMap(cscDemineur, basicCategory, 1, standardDistance, false, 0, DirectorAPI.Stage.ViscousFalls);
             AddCardToMap(cscDemineur, basicCategory, 1, standardDistance, false, 0, DirectorAPI.Stage.WetlandAspect);
             AddCardToMap(cscDemineur, basicCategory, 1, standardDistance, false, 0, DirectorAPI.Stage.SulfurPools);
+            AddCardToMap(cscDemineur, basicCategory, 1, standardDistance, false, 0, DirectorAPI.Stage.GildedCoast);
 
             //simulacrum
             AddCardToMap(cscDemineur, basicCategory, 1, standardDistance, false, 0, DirectorAPI.Stage.SkyMeadowSimulacrum);
